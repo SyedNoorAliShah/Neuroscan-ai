@@ -26,12 +26,11 @@ VGG_FILE_ID    = "1dCgXmAgp3h3wClV6_MgPy86Wx-wLh3W8"
 EFF_FILE_ID    = "1s33bLIVRlQvcWLoF-kE2HPOOREkquJJW"
 
 def download_model(file_id, dest_path):
-    """gdown se Google Drive file download karo - large files ke liye best"""
     if os.path.exists(dest_path) and os.path.getsize(dest_path) > 1_000_000:
-        return  # Already downloaded and looks valid (>1MB)
+        return
     import gdown
     url = f"https://drive.google.com/uc?id={file_id}"
-    gdown.download(url, dest_path, quiet=False, fuzzy=True)
+    gdown.download(url, dest_path, quiet=False)  # fuzzy removed for gdown 6.x
 
 @st.cache_resource
 def load_models():
