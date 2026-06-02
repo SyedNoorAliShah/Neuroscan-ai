@@ -1,11 +1,10 @@
-
 import streamlit as st
 import torch, torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.models as models
 import timm
 from PIL import Image
-import json, os, requests
+import json, os
 from datetime import datetime
 
 st.set_page_config(page_title="NeuroScan AI", page_icon="🧠", layout="wide")
@@ -26,31 +25,24 @@ RESNET_FILE_ID = "15hFh0WDQEaNHE_wtAkWZvAtfFzfCRfP5"
 VGG_FILE_ID    = "1dCgXmAgp3h3wClV6_MgPy86Wx-wLh3W8"
 EFF_FILE_ID    = "1s33bLIVRlQvcWLoF-kE2HPOOREkquJJW"
 
-def download_model_from_drive(file_id, dest_path):
-    if os.path.exists(dest_path):
-        return
-    session = requests.Session()
-    url = "https://drive.google.com/uc?export=download"
-    response = session.get(url, params={"id": file_id}, stream=True)
-    token = None
-    for key, value in response.cookies.items():
-        if key.startswith("download_warning"):
-            token = value
-            break
-    if token:
-        response = session.get(url, params={"id": file_id, "confirm": token}, stream=True)
-    with open(dest_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=32768):
-            if chunk:
-                f.write(chunk)
+def download_model(file_id, dest_path):
+    """gdown se Google Drive file download karo - large files ke liye best"""
+    if os.path.exists(dest_path) and os.path.getsize(dest_path) > 1_000_000:
+        return  # Already downloaded and looks valid (>1MB)
+    import gdown
+    url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(url, dest_path, quiet=False, fuzzy=True)
 
 @st.cache_resource
 def load_models():
     device = torch.device('cpu')
-    with st.spinner("📥 Downloading models from Google Drive... (pehli baar thoda time lagega)"):
-        download_model_from_drive(RESNET_FILE_ID, "resnet_4class.pth")
-        download_model_from_drive(VGG_FILE_ID,    "vgg_4class.pth")
-        download_model_from_drive(EFF_FILE_ID,    "eff_4class.pth")
+
+    with st.spinner("📥 Downloading ResNet model..."):
+        download_model(RESNET_FILE_ID, "resnet_4class.pth")
+    with st.spinner("📥 Downloading VGG model..."):
+        download_model(VGG_FILE_ID, "vgg_4class.pth")
+    with st.spinner("📥 Downloading EfficientNet model..."):
+        download_model(EFF_FILE_ID, "eff_4class.pth")
 
     resnet = models.resnet18(weights=None)
     resnet.fc = nn.Sequential(nn.Dropout(0.3), nn.Linear(resnet.fc.in_features, NUM_CLASSES))
@@ -172,5 +164,3 @@ with col2:
             save_hist(patient_name, age, gender, result, conf)
         else:
             st.info("👈 Enter patient name in sidebar for LLaMA report!")
-
-print("✅ app.py ready!")
