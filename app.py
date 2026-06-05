@@ -52,14 +52,15 @@ def load_models():
     device = torch.device('cpu')
     resnet = models.resnet18(weights=None)
     resnet.fc = nn.Sequential(nn.Dropout(0.3), nn.Linear(resnet.fc.in_features, NUM_CLASSES))
-    resnet.load_state_dict(torch.load('resnet_4class.pth', map_location=device))
+    # ── KEY FIX: weights_only=False ──
+    resnet.load_state_dict(torch.load('resnet_4class.pth', map_location=device, weights_only=False))
     resnet.eval()
     vgg = models.vgg16(weights=None)
     vgg.classifier[6] = nn.Sequential(nn.Dropout(0.3), nn.Linear(4096, NUM_CLASSES))
-    vgg.load_state_dict(torch.load('vgg_4class.pth', map_location=device))
+    vgg.load_state_dict(torch.load('vgg_4class.pth', map_location=device, weights_only=False))
     vgg.eval()
     eff = timm.create_model('efficientnet_b0', pretrained=False, num_classes=NUM_CLASSES)
-    eff.load_state_dict(torch.load('eff_4class.pth', map_location=device))
+    eff.load_state_dict(torch.load('eff_4class.pth', map_location=device, weights_only=False))
     eff.eval()
     return resnet, vgg, eff
 
@@ -168,4 +169,4 @@ with col2:
         else:
             st.info("👈 Enter patient name in sidebar for LLaMA report!")
 
-print("✅ STEP 4 DONE — app.py ready!")
+print("✅ Fixed app.py ready!")
