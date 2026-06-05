@@ -1,4 +1,3 @@
-
 import streamlit as st
 import torch, torch.nn as nn
 import torchvision.transforms as transforms
@@ -52,7 +51,6 @@ def load_models():
     device = torch.device('cpu')
     resnet = models.resnet18(weights=None)
     resnet.fc = nn.Sequential(nn.Dropout(0.3), nn.Linear(resnet.fc.in_features, NUM_CLASSES))
-    # ── KEY FIX: weights_only=False ──
     resnet.load_state_dict(torch.load('resnet_4class.pth', map_location=device, weights_only=False))
     resnet.eval()
     vgg = models.vgg16(weights=None)
@@ -168,5 +166,3 @@ with col2:
             save_hist(patient_name, age, gender, result, conf)
         else:
             st.info("👈 Enter patient name in sidebar for LLaMA report!")
-
-print("✅ Fixed app.py ready!")
