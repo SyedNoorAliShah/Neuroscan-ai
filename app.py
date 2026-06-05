@@ -1,62 +1,66 @@
+
 import streamlit as st
 import torch, torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.models as models
 import timm
 from PIL import Image
-import json, os
+import json, os, requests
 from datetime import datetime
 
 st.set_page_config(page_title="NeuroScan AI", page_icon="🧠", layout="wide")
 st.markdown("""<style>
 .stApp{background:linear-gradient(135deg,#0e1117,#1a1f2e)}
-.title-box{background:linear-gradient(90deg,#667eea,#764ba2);padding:25px;border-radius:15px;text-align:center;margin-bottom:20px}
+.title-box{background:linear-gradient(90deg,#1a6faf,#0d4f8c);padding:25px;border-radius:15px;text-align:center;margin-bottom:20px}
 .result-tumor{background:linear-gradient(135deg,#ff416c,#ff4b2b);padding:20px;border-radius:15px;text-align:center}
 .result-normal{background:linear-gradient(135deg,#11998e,#38ef7d);padding:20px;border-radius:15px;text-align:center}
 .model-card{background:#1e2130;padding:12px;border-radius:10px;text-align:center;border:1px solid #444;margin:5px}
-.report-box{background:#1e2130;padding:15px;border-radius:10px;border:1px solid #667eea}
+.report-box{background:#1e2130;padding:15px;border-radius:10px;border:1px solid #1a6faf}
 </style>""", unsafe_allow_html=True)
 
 CLASS_NAMES = ['Glioma', 'Meningioma', 'No Tumor', 'Pituitary']
 NUM_CLASSES = 4
 
-# Google Drive File IDs
-RESNET_FILE_ID = "15hFh0WDQEaNHE_wtAkWZvAtfFzfCRfP5"
-VGG_FILE_ID    = "1dCgXmAgp3h3wClV6_MgPy86Wx-wLh3W8"
-EFF_FILE_ID    = "1s33bLIVRlQvcWLoF-kE2HPOOREkquJJW"
+MODELS_INFO = {
+    'resnet_4class.pth': '1s33bLIVRlQvcWLoF-kE2HPOOREkquJJW',
+    'vgg_4class.pth':    '1dCgXmAgp3h3wClV6_MgPy86Wx-wLh3W8',
+    'eff_4class.pth':    '15hFh0WDQEaNHE_wtAkWZvAtfFzfCRfP5',
+}
 
-def download_model(file_id, dest_path):
-    if os.path.exists(dest_path) and os.path.getsize(dest_path) > 1_000_000:
-        return
-    import gdown
-    url = f"https://drive.google.com/uc?id={file_id}"
-    gdown.download(url, dest_path, quiet=False)  # fuzzy removed for gdown 6.x
+def download_model(file_id, dest):
+    session = requests.Session()
+    url = "https://docs.google.com/uc?export=download"
+    r = session.get(url, params={'id': file_id}, stream=True)
+    token = next((v for k,v in r.cookies.items() if k.startswith('download_warning')), None)
+    if token:
+        r = session.get(url, params={'id': file_id, 'confirm': token}, stream=True)
+    with open(dest, 'wb') as f:
+        for chunk in r.iter_content(32768):
+            if chunk: f.write(chunk)
+
+def download_all():
+    for fname, fid in MODELS_INFO.items():
+        if not os.path.exists(fname) or os.path.getsize(fname) < 1000:
+            st.info(f"⏳ Downloading {fname}...")
+            download_model(fid, fname)
+            st.success(f"✅ {fname} ready!")
+
+download_all()
 
 @st.cache_resource
 def load_models():
     device = torch.device('cpu')
-
-    with st.spinner("📥 Downloading ResNet model..."):
-        download_model(RESNET_FILE_ID, "resnet_4class.pth")
-    with st.spinner("📥 Downloading VGG model..."):
-        download_model(VGG_FILE_ID, "vgg_4class.pth")
-    with st.spinner("📥 Downloading EfficientNet model..."):
-        download_model(EFF_FILE_ID, "eff_4class.pth")
-
     resnet = models.resnet18(weights=None)
     resnet.fc = nn.Sequential(nn.Dropout(0.3), nn.Linear(resnet.fc.in_features, NUM_CLASSES))
     resnet.load_state_dict(torch.load('resnet_4class.pth', map_location=device))
     resnet.eval()
-
     vgg = models.vgg16(weights=None)
     vgg.classifier[6] = nn.Sequential(nn.Dropout(0.3), nn.Linear(4096, NUM_CLASSES))
     vgg.load_state_dict(torch.load('vgg_4class.pth', map_location=device))
     vgg.eval()
-
     eff = timm.create_model('efficientnet_b0', pretrained=False, num_classes=NUM_CLASSES)
     eff.load_state_dict(torch.load('eff_4class.pth', map_location=device))
     eff.eval()
-
     return resnet, vgg, eff
 
 resnet_m, vgg_m, eff_m = load_models()
@@ -93,8 +97,8 @@ def llama_report(tumor, conf, name, age, gender):
         prompt = f"<|system|>You are a radiologist.<|user|>Write a brief MRI report for {name}, {age}y {gender}. Finding: {tumor} ({desc.get(tumor,'')}), Confidence {conf:.1f}%. Include Summary, Findings, Recommendation in 100 words.<|assistant|>"
         out = gen(prompt, max_new_tokens=150, temperature=0.7, do_sample=True)
         return out[0]['generated_text'].split('<|assistant|>')[-1].strip()
-    except Exception as ex:
-        return f"Report: {tumor} detected with {conf:.1f}% confidence. Please consult a neurologist immediately."
+    except:
+        return f"{tumor} detected with {conf:.1f}% confidence. Please consult a neurologist."
 
 def load_hist():
     try:
@@ -153,7 +157,7 @@ with col2:
                                (m2,"VGG16",   preds['vgg'],   preds['vgg_conf']),
                                (m3,"EffNet",  preds['eff'],   preds['eff_conf'])]:
             with col:
-                st.markdown(f'<div class="model-card"><h5 style="color:#667eea">{nm}</h5><p style="color:white;margin:0">{res}</p><p style="color:#aaa;margin:0">{cn:.1f}%</p></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="model-card"><h5 style="color:#1a6faf">{nm}</h5><p style="color:white;margin:0">{res}</p><p style="color:#aaa;margin:0">{cn:.1f}%</p></div>', unsafe_allow_html=True)
 
         if patient_name:
             st.markdown("#### 📋 LLaMA Medical Report")
@@ -163,3 +167,5 @@ with col2:
             save_hist(patient_name, age, gender, result, conf)
         else:
             st.info("👈 Enter patient name in sidebar for LLaMA report!")
+
+print("✅ STEP 4 DONE — app.py ready!")
